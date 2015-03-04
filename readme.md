@@ -4,85 +4,53 @@
 
 This version is stable, but only intended to support a small amount of users as a proof of concept. While it uses programming best practices, it is not designed to take the place of an enterprise system.
 
-## Installation
+## Quick Installation
 
-**Install Prerequisites**
+If you would like to setup a development environment quickly, you can use the following method. For a more hands on approach, check out the [INSTALL.md](INSTALL.md) document.
 
-    admin:~$ sudo apt-get install git fabric postgresql python-setuptools \
-    	postgresql-server-dev-all python-dev libxml2-dev libxslt-dev
-    admin:~$ sudo easy_install pip
-    admin:~$ sudo pip install virtualenv
-    
-**Create ADL LRS system user**
+Note: Make sure you have git installed `sudo apt-get install git`
 
-    admin:~$ sudo useradd -c "ADL Learning Record Store System" -m -s "/bin/bash" <db_owner>
-    
-**Setup Postgres**
+Prior to cloning the repository, create an ADL LRS system user and switch to that user:
 
-    admin:~$ sudo -u postgres createuser -P <db_owner>
-    Enter password for new role: *****
-	Enter it again: *****
-    Shall the new role be a superuser? (y/n) y
-    admin:~$ sudo -u postgres psql template1
-    template1=# CREATE DATABASE lrs OWNER <db_owner>;
-    template1=# \q (exits shell)
-    
-**Clone the LRS repository**
+```
+sudo su
 
-	admin:~$ sudo su <db_owner>
-	dbowner:~$ mkdir <dir_name>
-    dbowner:~$ git clone https://github.com/adlnet/ADL_LRS.git <dir_name>/
-    dbowner:~$ cd <dir_name>/ADL_LRS
-    
-**Set the LRS configuration**
+useradd -c "ADL Learning Record Store System" -m -s "/bin/bash" adllrs
 
-	### File: ADL_LRS/adl_lrs/settings.py
-	
-	# configure the database
-	DATABASES = {
-    	'default': {
-    	    'ENGINE': 'django.db.backends.postgresql_psycopg2',
-	        'NAME': 'lrs',
-	        'USER': '<db_owner>',
-	        'PASSWORD': 'password',   # Comment out these lines if
-	        'HOST': 'localhost',      # using postgresql "peer" auth.
-	        'PORT': '',               # See pg_hba.conf for details
-	    }
-	}
-	
-	# Make this unique, and don't share it with anybody.
-	SECRET_KEY = 'Some long random string with numb3rs and $ymbol$'
-	
-	# set to 'https' if using SSL encryption
-	SITE_SCHEME = 'http'
+su - adllrs
+git clone https://github.com/ty-/ADL_LRS.git
+cd ADL_LRS
+git checkout quickinstall
+exit
+```
 
-**Setup the environment**
+Optionally, if you would like to set a password for the adllrs user, run the following command: `passwd adllrs`
 
-    dbowner:ADL_LRS$ fab setup_env
-    ...
-    dbowner:ADL_LRS$ source ../env/bin/activate
-    (env)dbowner:ADL_LRS$
-    
-**Setup the LRS**
+As root run setup_lrs.sh and go through the prompts (default passwords are "password" for development):
 
-    (env)dbowner:ADL_LRS$ fab setup_lrs
-    ...
-    You just installed Django's auth system, which means you don't have any superusers defined.
-	Would you like to create one now? (yes/no): yes
-	Username (leave blank to use '<db_owner>'): 
-	E-mail address:
-	Password: 
-	Password (again): 
-	Superuser created successfully.
-	...
+```
+cd /home/adllrs/ADL_LRS
+./setup_lrs.sh
+```
 
-If you get some sort of authentication error here, make sure that Django and PostgreSQL are both
-using the same form of authentication (*adl_lrs/settings.py* and *pg_hba.conf*) and that the credentials
-given in *settings.py* are the same as those you created.
+After running the script, finish the installation as the adllrs user with the following commands:
+
+```
+su adllrs
+fab setup_env
+source ../env/bin/activate
+fab setup_lrs
+```
 
 ## Starting
 
-While still in the ADL_LRS directory, run
+For development, you can run the LRS with:
+
+```
+python manage.py runserver
+```
+
+Alternatively, while still in the ADL_LRS directory, run
 
     (env)dbowner:ADL_LRS$ supervisord
 
