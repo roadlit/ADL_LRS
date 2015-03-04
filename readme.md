@@ -18,7 +18,7 @@ sudo su
 useradd -c "ADL Learning Record Store System" -m -s "/bin/bash" adllrs
 
 su - adllrs
-git clone https://github.com/ty-/ADL_LRS.git
+git clone https://github.com/adlnet/ADL_LRS.git
 cd ADL_LRS
 git checkout quickinstall
 exit
