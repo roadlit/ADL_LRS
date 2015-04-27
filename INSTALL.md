@@ -40,7 +40,7 @@ If you would like to manually install the LRS, rather than use the provided scri
     	    'ENGINE': 'django.db.backends.postgresql_psycopg2',
 	        'NAME': 'lrs',
 	        'USER': '<db_owner>',
-	        'PASSWORD': 'password',   # Comment out these lines if
+	        'PASSWORD': '<password>',   # Comment out these lines if
 	        'HOST': 'localhost',      # using postgresql "peer" auth.
 	        'PORT': '',               # See pg_hba.conf for details
 	    }
@@ -75,3 +75,38 @@ If you would like to manually install the LRS, rather than use the provided scri
 If you get some sort of authentication error here, make sure that Django and PostgreSQL are both
 using the same form of authentication (*adl_lrs/settings.py* and *pg_hba.conf*) and that the credentials
 given in *settings.py* are the same as those you created.
+
+## Starting
+
+While still in the ADL_LRS directory, run
+
+    (env)dbowner:ADL_LRS$ python manage.py runserver
+
+This starts a lightweight development web server on the local machine. By default, the server runs on port 8000 on the IP address 127.0.0.1. You can pass in an IP address and port number explicitly. This will serve your static files without setting up Nginx but must NOT be used for production purposes. Press `CTRL + C` to stop the server
+
+
+Set your site domain
+
+  Visit the admin section of your website (/admin). Click Sites and you'll see the only entry is 'example.com' (The key for this in the DB is 1 and it maps back to the SITE_ID value in settings). Change the domain and name to the domain you're going to use. If running locally it could be localhost:8000, or if production could be lrs.adlnet.gov (DON'T include the scheme here, that should be set in settings.py already). Sync your database again to apply the change
+
+    (env)dbowner:ADL_LRS$ python manage.py syncdb
+
+
+
+Whenever you want to exit the virtual environment, just type `deactivate`
+
+
+For other ways to start and run the LRS, please visit our Wiki.
+
+## Test LRS
+    
+    (env)dbowner:ADL_LRS$ fab test_lrs
+
+## Helpful Information
+    
+* [Test Coverage](https://github.com/adlnet/ADL_LRS/wiki/Code-Coverage)
+* [Code Profiling](https://github.com/adlnet/ADL_LRS/wiki/Code-Profiling-with-cProfile)
+* [Sending Attachments](https://github.com/adlnet/ADL_LRS/wiki/Sending-Statements-with-Attachments)
+* [Setting up Nginx and uWSGI](https://github.com/adlnet/ADL_LRS/wiki/Using-Nginx-for-Production)
+* [OAuth Help](https://github.com/adlnet/ADL_LRS/wiki/Using-OAuth)
+* [Clearing the Database](https://github.com/adlnet/ADL_LRS/wiki/Clearing-the-Database)
