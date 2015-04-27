@@ -1,16 +1,16 @@
 import json
 import urllib2
+from isodate.isodatetime import parse_datetime
+from isodate.isoerror import ISO8601Error
 
 from django.conf import settings
-from django.core.cache import get_cache
 
 from util import validate_uuid, convert_to_dict, get_agent_ifp
 from Authorization import auth
 from StatementValidator import StatementValidator
+
 from ..models import Statement, Agent, Activity
 from ..exceptions import ParamConflict, ParamError, Forbidden, NotFound, BadRequest, IDNotFoundError
-
-att_cache = get_cache('attachment_cache')
 
 def check_for_existing_statementId(stmtID):
     return Statement.objects.filter(statement_id=stmtID).exists()
@@ -134,7 +134,7 @@ def server_validation(stmt_set, auth, payload_sha2s):
             get_act_def_data(stmt_set['object'])
             
             try:
-                validator = StatementValidator(None)
+                validator = StatementValidator()
                 validator.validate_activity(stmt_set['object'])
             except Exception, e:
                 raise BadRequest(e.message)
@@ -236,16 +236,27 @@ def statements_get(req_dict):
     if 'params' in req_dict and ('statementId' in req_dict['params'] or 'voidedStatementId' in req_dict['params']):
         req_dict['statementId'] = validate_statementId(req_dict)
 
+    if 'since' in req_dict['params']:
+        try:
+            parse_datetime(req_dict['params']['since'])
+        except (Exception, ISO8601Error):
+            raise ParamError("Since parameter was not a valid ISO8601 timestamp")
+
+    if 'until' in req_dict['params']:
+        try:
+            parse_datetime(req_dict['params']['until'])
+        except (Exception, ISO8601Error):
+            raise ParamError("Until parameter was not a valid ISO8601 timestamp")
+
     # Django converts all query values to string - make boolean depending on if client wants attachments or not
     # Only need to do this in GET b/c GET/more will have it saved in pickle information
     if 'params' in req_dict and 'attachments' in req_dict['params']:
-        if req_dict['params']['attachments'] == 'True':
+        if req_dict['params']['attachments'].lower() == 'true':
             req_dict['params']['attachments'] = True
         else:
             req_dict['params']['attachments'] = False
     else:
         req_dict['params']['attachments'] = False
-   
     return req_dict
 
 @auth
@@ -305,37 +316,43 @@ def validate_attachments(attachment_data, payload_sha2s):
         if 'sha2' in attachment:
             sha2 = attachment['sha2']
             # Check if the sha2 field is a key in the payload dict
-            if not sha2 in payload_sha2s:
-                err_msg = "Could not find attachment payload with sha: %s" % sha2
-                raise ParamError(err_msg)
-
+            if payload_sha2s:
+                if not sha2 in payload_sha2s:
+                    err_msg = "Could not find attachment payload with sha: %s" % sha2
+                    raise ParamError(err_msg)
+            else:
+                raise BadRequest("Missing X-Experience-API-Hash field in header")
 @auth
 def activity_state_post(req_dict):
     rogueparams = set(req_dict['params']) - set(["activityId", "agent", "stateId", "registration"])
     if rogueparams:
         raise ParamError("The post activity state request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try:
-        req_dict['params']['activityId']
-    except KeyError:
+    validator = StatementValidator()
+    if 'activityId' in req_dict['params']:
+        validator.validate_uri(req_dict['params']['activityId'], "activityId param for activity state")
+    else:
         err_msg = "Error -- activity_state - method = %s, but activityId parameter is missing.." % req_dict['method']
         raise ParamError(err_msg)
-    if not 'activity_state_agent_validated' in req_dict:
-        try:
-            req_dict['params']['agent']
-        except KeyError:
-            err_msg = "Error -- activity_state - method = %s, but agent parameter is missing.." % req_dict['method']
-            raise ParamError(err_msg)
-    try:
-        req_dict['params']['stateId']
-    except KeyError:
-        err_msg = "Error -- activity_state - method = %s, but stateId parameter is missing.." % req_dict['method']
-        raise ParamError(err_msg)
 
-    if 'params' in req_dict and 'registration' in req_dict['params']:
+    if not 'stateId' in req_dict['params']:
+        err_msg = "Error -- activity_state - method = %s, but stateId parameter is missing.." % req_dict['method']
+        raise ParamError(err_msg)    
+
+    if 'registration' in req_dict['params']:
         if not validate_uuid(req_dict['params']['registration']):
             raise ParamError("%s is not a valid uuid for the registration parameter")
 
+    if 'agent' in req_dict['params']:
+        try:
+            agent = json.loads(req_dict['params']['agent'])
+        except Exception, e:
+            raise ParamError("agent param for activity state is not valid")
+        validator.validate_agent(agent, "Activity state agent param")
+    else:
+        err_msg = "Error -- activity_state - method = %s, but agent parameter is missing.." % req_dict['method']
+        raise ParamError(err_msg)
+    
     if 'headers' not in req_dict or ('CONTENT_TYPE' not in req_dict['headers'] or req_dict['headers']['CONTENT_TYPE'] != "application/json"):
         err_msg = "The content type for activity state POSTs must be application/json"
         raise ParamError(err_msg)
@@ -359,26 +376,30 @@ def activity_state_put(req_dict):
     if rogueparams:
         raise ParamError("The put activity state request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try:
-        req_dict['params']['activityId']
-    except KeyError:
+    validator = StatementValidator()
+    if 'activityId' in req_dict['params']:
+        validator.validate_uri(req_dict['params']['activityId'], "activityId param for activity state")
+    else:
         err_msg = "Error -- activity_state - method = %s, but activityId parameter is missing.." % req_dict['method']
         raise ParamError(err_msg)
-    if not 'activity_state_agent_validated' in req_dict:
-        try:
-            req_dict['params']['agent']
-        except KeyError:
-            err_msg = "Error -- activity_state - method = %s, but agent parameter is missing.." % req_dict['method']
-            raise ParamError(err_msg)
-    try:
-        req_dict['params']['stateId']
-    except KeyError:
-        err_msg = "Error -- activity_state - method = %s, but stateId parameter is missing.." % req_dict['method']
-        raise ParamError(err_msg)
 
-    if 'params' in req_dict and 'registration' in req_dict['params']:
+    if not 'stateId' in req_dict['params']:
+        err_msg = "Error -- activity_state - method = %s, but stateId parameter is missing.." % req_dict['method']
+        raise ParamError(err_msg)    
+
+    if 'registration' in req_dict['params']:
         if not validate_uuid(req_dict['params']['registration']):
             raise ParamError("%s is not a valid uuid for the registration parameter")
+
+    if 'agent' in req_dict['params']:
+        try:
+            agent = json.loads(req_dict['params']['agent'])
+        except Exception, e:
+            raise ParamError("agent param for activity state is not valid")
+        validator.validate_agent(agent, "Activity state agent param")
+    else:
+        err_msg = "Error -- activity_state - method = %s, but agent parameter is missing.." % req_dict['method']
+        raise ParamError(err_msg)
     
     # Must have body included for state
     if 'body' not in req_dict:
@@ -399,21 +420,33 @@ def activity_state_get(req_dict):
     if rogueparams:
         raise ParamError("The get activity state request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try:
-        req_dict['params']['activityId']
-    except KeyError:
+    validator = StatementValidator()
+    if 'activityId' in req_dict['params']:
+        validator.validate_uri(req_dict['params']['activityId'], "activityId param for activity state")
+    else:
         err_msg = "Error -- activity_state - method = %s, but activityId parameter is missing.." % req_dict['method']
         raise ParamError(err_msg)
-    if not 'activity_state_agent_validated' in req_dict:
-        try:
-            req_dict['params']['agent']
-        except KeyError:
-            err_msg = "Error -- activity_state - method = %s, but agent parameter is missing.." % req_dict['method']
-            raise ParamError(err_msg)
 
-    if 'params' in req_dict and 'registration' in req_dict['params']:
+    if 'registration' in req_dict['params']:
         if not validate_uuid(req_dict['params']['registration']):
             raise ParamError("%s is not a valid uuid for the registration parameter")
+
+    if 'agent' in req_dict['params']:
+        try:
+            agent = json.loads(req_dict['params']['agent'])
+        except Exception, e:
+            raise ParamError("agent param for activity state is not valid")
+        validator.validate_agent(agent, "Activity state agent param")
+    else:
+        err_msg = "Error -- activity_state - method = %s, but agent parameter is missing.." % req_dict['method']
+        raise ParamError(err_msg)
+
+    if 'since' in req_dict['params']:
+        try:
+            parse_datetime(req_dict['params']['since'])
+        except (Exception, ISO8601Error):
+            raise ParamError("Since parameter was not a valid ISO8601 timestamp")
+
 
     # Extra validation if oauth
     if req_dict['auth']['type'] == 'oauth':
@@ -426,21 +459,26 @@ def activity_state_delete(req_dict):
     if rogueparams:
         raise ParamError("The delete activity state request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try:
-        req_dict['params']['activityId']
-    except KeyError:
+    validator = StatementValidator()
+    if 'activityId' in req_dict['params']:
+        validator.validate_uri(req_dict['params']['activityId'], "activityId param for activity state")
+    else:
         err_msg = "Error -- activity_state - method = %s, but activityId parameter is missing.." % req_dict['method']
         raise ParamError(err_msg)
-    if not 'activity_state_agent_validated' in req_dict:
-        try:
-            req_dict['params']['agent']
-        except KeyError:
-            err_msg = "Error -- activity_state - method = %s, but agent parameter is missing.." % req_dict['method']
-            raise ParamError(err_msg)
 
-    if 'params' in req_dict and 'registration' in req_dict['params']:
+    if 'registration' in req_dict['params']:
         if not validate_uuid(req_dict['params']['registration']):
             raise ParamError("%s is not a valid uuid for the registration parameter")
+
+    if 'agent' in req_dict['params']:
+        try:
+            agent = json.loads(req_dict['params']['agent'])
+        except Exception, e:
+            raise ParamError("agent param for activity state is not valid")
+        validator.validate_agent(agent, "Activity state agent param")
+    else:
+        err_msg = "Error -- activity_state - method = %s, but agent parameter is missing.." % req_dict['method']
+        raise ParamError(err_msg)
     
     # Extra validation if oauth
     if req_dict['auth']['type'] == 'oauth':
@@ -453,16 +491,16 @@ def activity_profile_post(req_dict):
     if rogueparams:
         raise ParamError("The post activity profile request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try:
-        req_dict['params']['activityId']
-    except KeyError:
+    validator = StatementValidator()
+    if 'activityId' in req_dict['params']:
+        validator.validate_uri(req_dict['params']['activityId'], "activityId param for activity profile")
+    else:
         err_msg = "Error -- activity_profile - method = %s, but activityId parameter missing.." % req_dict['method']
-        raise ParamError(err_msg)    
-    try:
-        req_dict['params']['profileId']
-    except KeyError:
-        err_msg = "Error -- activity_profile - method = %s, but profileId parameter missing.." % req_dict['method']
         raise ParamError(err_msg)
+
+    if not 'profileId' in req_dict['params']:
+        err_msg = "Error -- activity_profile - method = %s, but profileId parameter missing.." % req_dict['method']
+        raise ParamError(err_msg)    
 
     if 'headers' not in req_dict or ('CONTENT_TYPE' not in req_dict['headers'] or req_dict['headers']['CONTENT_TYPE'] != "application/json"):
         err_msg = "The content type for activity profile POSTs must be application/json"
@@ -481,16 +519,16 @@ def activity_profile_put(req_dict):
     if rogueparams:
         raise ParamError("The put activity profile request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try:
-        req_dict['params']['activityId']
-    except KeyError:
+    validator = StatementValidator()
+    if 'activityId' in req_dict['params']:
+        validator.validate_uri(req_dict['params']['activityId'], "activityId param for activity profile")
+    else:
         err_msg = "Error -- activity_profile - method = %s, but activityId parameter missing.." % req_dict['method']
-        raise ParamError(err_msg)    
-    try:
-        req_dict['params']['profileId']
-    except KeyError:
-        err_msg = "Error -- activity_profile - method = %s, but profileId parameter missing.." % req_dict['method']
         raise ParamError(err_msg)
+
+    if not 'profileId' in req_dict['params']:
+        err_msg = "Error -- activity_profile - method = %s, but profileId parameter missing.." % req_dict['method']
+        raise ParamError(err_msg)    
     
     if 'body' not in req_dict:
         err_msg = "Could not find the profile document"
@@ -507,11 +545,19 @@ def activity_profile_get(req_dict):
     if rogueparams:
         raise ParamError("The get activity profile request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try:
-        req_dict['params']['activityId']
-    except KeyError:
-        err_msg = "Error -- activity_profile - method = %s, but no activityId parameter.. the activityId parameter is required" % req_dict['method']
+    validator = StatementValidator()
+    if 'activityId' in req_dict['params']:
+        validator.validate_uri(req_dict['params']['activityId'], "activityId param for activity profile")
+    else:
+        err_msg = "Error -- activity_profile - method = %s, but activityId parameter missing.." % req_dict['method']
         raise ParamError(err_msg)
+
+    if 'since' in req_dict['params']:
+        try:
+            parse_datetime(req_dict['params']['since'])
+        except (Exception, ISO8601Error):
+            raise ParamError("Since parameter was not a valid ISO8601 timestamp")
+
     return req_dict
 
 @auth
@@ -520,16 +566,17 @@ def activity_profile_delete(req_dict):
     if rogueparams:
         raise ParamError("The delete activity profile request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try:
-        req_dict['params']['activityId']
-    except KeyError:
-        err_msg = "Error -- activity_profile - method = %s, but no activityId parameter.. the activityId parameter is required" % req_dict['method']
+    validator = StatementValidator()
+    if 'activityId' in req_dict['params']:
+        validator.validate_uri(req_dict['params']['activityId'], "activityId param for activity profile")
+    else:
+        err_msg = "Error -- activity_profile - method = %s, but activityId parameter missing.." % req_dict['method']
         raise ParamError(err_msg)
-    try:
-        req_dict['params']['profileId']
-    except KeyError:
-        err_msg = "Error -- activity_profile - method = %s, but no profileId parameter.. the profileId parameter is required" % req_dict['method']
-        raise ParamError(err_msg)
+
+    if not 'profileId' in req_dict['params']:
+        err_msg = "Error -- activity_profile - method = %s, but profileId parameter missing.." % req_dict['method']
+        raise ParamError(err_msg)    
+
     return req_dict
 
 @auth
@@ -546,7 +593,7 @@ def activities_get(req_dict):
 
     # Try to retrieve activity, if DNE then return empty else return activity info
     try:
-        Activity.objects.get(activity_id=activityId)
+        Activity.objects.get(activity_id=activityId, canonical_version=True)
     except Activity.DoesNotExist:    
         err_msg = "No activity found with ID %s" % activityId
         raise IDNotFoundError(err_msg)
@@ -559,16 +606,20 @@ def agent_profile_post(req_dict):
     if rogueparams:
         raise ParamError("The post agent profile request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try: 
-        req_dict['params']['agent']
-    except KeyError:
+    validator = StatementValidator()
+    if 'agent' in req_dict['params']:
+        try:
+            agent = json.loads(req_dict['params']['agent'])
+        except Exception, e:
+            raise ParamError("agent param for agent profile is not valid")
+        validator.validate_agent(agent, "agent param for agent profile")
+    else:
         err_msg = "Error -- agent_profile - method = %s, but agent parameter missing.." % req_dict['method']
         raise ParamError(err_msg)
-    try:
-        req_dict['params']['profileId']
-    except KeyError:
+
+    if not 'profileId' in req_dict['params']:
         err_msg = "Error -- agent_profile - method = %s, but profileId parameter missing.." % req_dict['method']
-        raise ParamError(err_msg)
+        raise ParamError(err_msg) 
 
     if 'headers' not in req_dict or ('CONTENT_TYPE' not in req_dict['headers'] or req_dict['headers']['CONTENT_TYPE'] != "application/json"):
         err_msg = "The content type for agent profile POSTs must be application/json"
@@ -593,16 +644,20 @@ def agent_profile_put(req_dict):
     if rogueparams:
         raise ParamError("The put agent profile request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try: 
-        req_dict['params']['agent']
-    except KeyError:
+    validator = StatementValidator()
+    if 'agent' in req_dict['params']:
+        try:
+            agent = json.loads(req_dict['params']['agent'])
+        except Exception, e:
+            raise ParamError("agent param for agent profile is not valid")
+        validator.validate_agent(agent, "agent param for agent profile")
+    else:
         err_msg = "Error -- agent_profile - method = %s, but agent parameter missing.." % req_dict['method']
         raise ParamError(err_msg)
-    try:
-        req_dict['params']['profileId']
-    except KeyError:
+
+    if not 'profileId' in req_dict['params']:
         err_msg = "Error -- agent_profile - method = %s, but profileId parameter missing.." % req_dict['method']
-        raise ParamError(err_msg)
+        raise ParamError(err_msg) 
     
     if 'body' not in req_dict:
         err_msg = "Could not find the profile document"
@@ -620,11 +675,22 @@ def agent_profile_get(req_dict):
     if rogueparams:
         raise ParamError("The get agent profile request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try: 
-        req_dict['params']['agent']
-    except KeyError:
-        err_msg = "Error -- agent_profile - method = %s, but agent parameter missing.. the agent parameter is required" % req_dict['method']
+    validator = StatementValidator()
+    if 'agent' in req_dict['params']:
+        try:
+            agent = json.loads(req_dict['params']['agent'])
+        except Exception, e:
+            raise ParamError("agent param for agent profile is not valid")
+        validator.validate_agent(agent, "agent param for agent profile")
+    else:
+        err_msg = "Error -- agent_profile - method = %s, but agent parameter missing.." % req_dict['method']
         raise ParamError(err_msg)
+
+    if 'since' in req_dict['params']:
+        try:
+            parse_datetime(req_dict['params']['since'])
+        except (Exception, ISO8601Error):
+            raise ParamError("Since parameter was not a valid ISO8601 timestamp")
 
     # Extra validation if oauth
     if req_dict['auth']['type'] == 'oauth':
@@ -637,16 +703,20 @@ def agent_profile_delete(req_dict):
     if rogueparams:
         raise ParamError("The delete agent profile request contained unexpected parameters: %s" % ", ".join(rogueparams))
 
-    try: 
-        req_dict['params']['agent']
-    except KeyError:
-        err_msg = "Error -- agent_profile - method = %s, but no agent parameter.. the agent parameter is required" % req_dict['method']
+    validator = StatementValidator()
+    if 'agent' in req_dict['params']:
+        try:
+            agent = json.loads(req_dict['params']['agent'])
+        except Exception, e:
+            raise ParamError("agent param for agent profile is not valid")
+        validator.validate_agent(agent, "agent param for agent profile")
+    else:
+        err_msg = "Error -- agent_profile - method = %s, but agent parameter missing.." % req_dict['method']
         raise ParamError(err_msg)
-    try:
-        req_dict['params']['profileId']
-    except KeyError:
-        err_msg = "Error -- agent_profile - method = %s, but no profileId parameter.. the profileId parameter is required" % req_dict['method']
-        raise ParamError(err_msg)
+
+    if not 'profileId' in req_dict['params']:
+        err_msg = "Error -- agent_profile - method = %s, but profileId parameter missing.." % req_dict['method']
+        raise ParamError(err_msg) 
     
     # Extra validation if oauth
     if req_dict['auth']['type'] == 'oauth':

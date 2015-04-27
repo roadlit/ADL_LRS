@@ -24,7 +24,7 @@ class AgentManagerTests(TestCase):
         self.password = "test"
         self.auth = "Basic %s" % base64.b64encode("%s:%s" % (self.username, self.password))
         form = {"username":self.username, "email":self.email,"password":self.password,"password2":self.password}
-        self.client.post(reverse(register),form, X_Experience_API_Version="1.0.0")           
+        self.client.post(reverse(register),form, X_Experience_API_Version=settings.XAPI_VERSION)           
 
     def test_agent_mbox_create(self):
         stmt = json.dumps({"actor":{"objectType": "Agent", "mbox":"mailto:bob@example.com"},
@@ -32,7 +32,7 @@ class AgentManagerTests(TestCase):
             "object": {'id': 'act://blah.com'}})
 
         response = self.client.post(reverse(statements), stmt, content_type="application/json",
-            Authorization=self.auth, X_Experience_API_Version="1.0.0")
+            Authorization=self.auth, X_Experience_API_Version=settings.XAPI_VERSION)
         
         self.assertEqual(response.status_code, 200)
         st_id = json.loads(response.content)        
@@ -47,7 +47,7 @@ class AgentManagerTests(TestCase):
             "object": {'id': 'act://blah.com'}})
 
         response = self.client.post(reverse(statements), stmt, content_type="application/json",
-            Authorization=self.auth, X_Experience_API_Version="1.0.0")
+            Authorization=self.auth, X_Experience_API_Version=settings.XAPI_VERSION)
         
         self.assertEqual(response.status_code, 200)
         st_id = json.loads(response.content)        
@@ -65,25 +65,25 @@ class AgentManagerTests(TestCase):
             "object": {'id': 'act://blah.com'}})
 
         response = self.client.post(reverse(statements), stmt, content_type="application/json",
-            Authorization=self.auth, X_Experience_API_Version="1.0.0")
+            Authorization=self.auth, X_Experience_API_Version=settings.XAPI_VERSION)
         
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.content, "mbox_sha1sum value [notarealsum] is not a valid sha1sum")
 
     def test_agent_openID_create(self):
-        stmt = json.dumps({"actor":{"objectType": "Agent", "openID":"http://bob.openID.com"},
+        stmt = json.dumps({"actor":{"objectType": "Agent", "openid":"http://bob.openid.com"},
             "verb":{"id": "http://adlnet.gov/expapi/verbs/passed"},
             "object": {'id': 'act://blah.com'}})
 
         response = self.client.post(reverse(statements), stmt, content_type="application/json",
-            Authorization=self.auth, X_Experience_API_Version="1.0.0")
+            Authorization=self.auth, X_Experience_API_Version=settings.XAPI_VERSION)
 
         self.assertEqual(response.status_code, 200)
         st_id = json.loads(response.content)        
         st = Statement.objects.get(statement_id=st_id[0])
         bob = st.actor
 
-        self.assertEquals(bob.openID, "http://bob.openID.com")
+        self.assertEquals(bob.openid, "http://bob.openid.com")
         self.assertEquals(bob.objectType, "Agent")
         self.assertFalse(bob.name)
         self.assertFalse(bob.mbox)
@@ -95,7 +95,7 @@ class AgentManagerTests(TestCase):
             "object": {'id': 'act://blah.com'}})
 
         response = self.client.post(reverse(statements), stmt, content_type="application/json",
-            Authorization=self.auth, X_Experience_API_Version="1.0.0")
+            Authorization=self.auth, X_Experience_API_Version=settings.XAPI_VERSION)
         
         self.assertEqual(response.status_code, 200)
         st_id = json.loads(response.content)        
@@ -107,7 +107,7 @@ class AgentManagerTests(TestCase):
         self.assertFalse(bob.name)
         self.assertFalse(bob.mbox)
         self.assertFalse(bob.mbox_sha1sum)
-        self.assertFalse(bob.openID)
+        self.assertFalse(bob.openid)
 
     def test_agent_kwargs_basic(self):
         ot = "Agent"
@@ -314,21 +314,21 @@ class AgentManagerTests(TestCase):
             "object": {'id': 'act://blah.com'}})
 
         response = self.client.post(reverse(statements), stmt, content_type="application/json",
-            Authorization=self.auth, X_Experience_API_Version="1.0.0")
+            Authorization=self.auth, X_Experience_API_Version=settings.XAPI_VERSION)
         
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.content, 'One and only one of mbox, mbox_sha1sum, openID, account, openid may be supplied with an Agent')
+        self.assertEqual(response.content, 'One and only one of mbox, mbox_sha1sum, openid, account may be supplied with an Agent')
 
     def test_agent_json_many_ids(self):
-        stmt = json.dumps({"actor":{"objectType": "Agent", "mbox":"mailto:bob@example.com", "openid":"bob.bobson.openID.org"},
+        stmt = json.dumps({"actor":{"objectType": "Agent", "mbox":"mailto:bob@example.com", "openid":"bob.bobson.openid.org"},
             "verb":{"id": "http://adlnet.gov/expapi/verbs/passed"},
             "object": {'id': 'act://blah.com'}})
 
         response = self.client.post(reverse(statements), stmt, content_type="application/json",
-            Authorization=self.auth, X_Experience_API_Version="1.0.0")
+            Authorization=self.auth, X_Experience_API_Version=settings.XAPI_VERSION)
         
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.content, 'One and only one of mbox, mbox_sha1sum, openID, account, openid may be supplied with an Agent')
+        self.assertEqual(response.content, 'One and only one of mbox, mbox_sha1sum, openid, account may be supplied with an Agent')
 
     def test_group(self):
         ot = "Group"
@@ -445,26 +445,26 @@ class AgentManagerTests(TestCase):
 
         ot_b = "Agent"
         name_b = "batman"
-        openID_b = "id:batman"
-        kwargs_b = {"objectType":ot_b,"name":name_b,"openID":openID_b}
+        openid_b = "id:batman"
+        kwargs_b = {"objectType":ot_b,"name":name_b,"openid":openid_b}
         bruce, created = Agent.objects.retrieve_or_create(**kwargs_b)
         self.assertTrue(created)
         bruce.save()
         self.assertEquals(bruce.objectType, ot_b)
         self.assertEquals(bruce.name, name_b)
-        self.assertEquals(bruce.openID, openID_b)
+        self.assertEquals(bruce.openid, openid_b)
 
         bruce_exact = bruce.to_dict()
         self.assertEquals(bruce_exact['objectType'], ot_b)
         self.assertEquals(bruce_exact['name'], name_b)
-        self.assertEquals(bruce_exact['openID'], openID_b)
+        self.assertEquals(bruce_exact['openid'], openid_b)
 
         bruce_ids = bruce.to_dict(format='ids')
         self.assertFalse('objectType' in str(bruce_ids), "object type was found in agent json")
         self.assertFalse('name' in str(bruce_ids), "name was found in agent json")
         self.assertFalse('mbox' in str(bruce_ids), "mbox was found in agent json")
         self.assertFalse('mbox_sha1sum' in str(bruce_ids), "mbox_sha1sum was found in agent json")
-        self.assertEquals(bruce_ids['openID'], openID_b)
+        self.assertEquals(bruce_ids['openid'], openid_b)
 
         ot_f = "Agent"
         name_f = "the flash"
@@ -489,7 +489,7 @@ class AgentManagerTests(TestCase):
         self.assertFalse('name' in barry_ids.items(), "name was found in agent json")
         self.assertFalse('mbox' in barry_ids.items(), "mbox was found in agent json")
         self.assertFalse('mbox_sha1sum' in str(barry_ids), "mbox_sha1sum was found in agent json")
-        self.assertFalse('openID' in str(barry_ids), "openID was found in agent json")
+        self.assertFalse('openid' in str(barry_ids), "openid was found in agent json")
         self.assertEquals(barry_ids['account']['homePage'], account_f['homePage'])
         self.assertEquals(barry_ids['account']['name'], account_f['name'])
 
