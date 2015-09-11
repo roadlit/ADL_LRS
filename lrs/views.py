@@ -68,10 +68,17 @@ def stmt_validator(request):
                 return render_to_response('validator.html', {"form": form, "error_message": e.message, "clean_data":clean_data},
                     context_instance=context)
             else:
-                clean_data = json.dumps(json.loads(form.cleaned_data['jsondata']), indent=4, sort_keys=True)
+                clean_data = json.dumps(validator.data, indent=4, sort_keys=True)
                 return render_to_response('validator.html', {"form": form,"valid_message": valid, "clean_data":clean_data},
                     context_instance=context)
     return render_to_response('validator.html', {"form": form}, context_instance=context)
+
+# Hosted example activites for the tests
+def actexample1(request):
+    return render_to_response('actexample1.json', mimetype="application/json")
+
+def actexample2(request):
+    return render_to_response('actexample2.json', mimetype="application/json")
 
 @decorator_from_middleware(accept_middleware.AcceptMiddleware)
 def about(request):
@@ -205,9 +212,11 @@ def register(request):
             pword = form.cleaned_data['password']
             email = form.cleaned_data['email']
             
+            # If username doesn't already exist
             if not User.objects.filter(username__exact=name).count():
+                # if email doesn't already exist
                 if not User.objects.filter(email__exact=email).count():
-                    user = User.objects.create_user(name, email, pword)
+                    User.objects.create_user(name, email, pword)
                 else:
                     return render_to_response('register.html', {"form": form, "error_message": "Email %s is already registered." % email},
                         context_instance=context)                    
@@ -583,6 +592,7 @@ processors = {
    }      
 }
 
+@transaction.commit_on_success
 def handle_request(request, more_id=None):
     try:
         r_dict = req_parse.parse(request, more_id)

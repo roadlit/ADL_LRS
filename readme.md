@@ -1,6 +1,6 @@
 ﻿# ADL LRS 
 
-#### Installation tested on Ubuntu 12.10 machine with Python 2.7.3. Should be good with Ubuntu 10.04 LTS - 13.04 releases. Updated to be compliant with the 1.0.2 xAPI spec.
+#### Installation tested on Ubuntu 12.10 machine with Python 2.7.3. Should be good with Ubuntu 10.04 LTS - 12.10 releases. Updated to be compliant with the 1.0.2 xAPI spec.
 
 This version is stable, but only intended to support a small amount of users as a proof of concept. While it uses programming best practices, it is not designed to take the place of an enterprise system.
 
@@ -118,6 +118,7 @@ For other ways to start and run the LRS, please visit our Wiki.
 * [Setting up Nginx and uWSGI](https://github.com/adlnet/ADL_LRS/wiki/Using-Nginx-for-Production)
 * [OAuth Help](https://github.com/adlnet/ADL_LRS/wiki/Using-OAuth)
 * [Clearing the Database](https://github.com/adlnet/ADL_LRS/wiki/Clearing-the-Database)
+* [Using Celery for Retrieving Activity Metadata](https://github.com/adlnet/ADL_LRS/wiki/Using-Celery-for-Retrieving-Activity-Metadata)
 
 ## License
    Copyright &copy;2015 Advanced Distributed Learning
