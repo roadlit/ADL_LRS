@@ -10,7 +10,7 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 
 from util import convert_to_utc, convert_to_dict
-from ..models import Statement, Agent
+from ..models import Statement, Agent, StatementRef
 from ..exceptions import NotFound, IDNotFoundError
 
 MORE_ENDPOINT = '/xapi/statements/more/'
@@ -32,7 +32,7 @@ def complex_get(param_dict, limit, language, format, attachments):
     # For statements/read/mine oauth scope
     authQ = Q()
     if 'auth' in param_dict and (param_dict['auth'] and 'statements_mine_only' in param_dict['auth']):
-        q_auth = param_dict['auth']['authority']
+        q_auth = param_dict['auth']['agent']
 
         # If oauth - set authority to look for as the user
         if q_auth.oauth_identifier:
@@ -88,9 +88,15 @@ def complex_get(param_dict, limit, language, format, attachments):
         reffilter = True
         activityQ = Q(object_activity__activity_id=param_dict['activity'])
         if 'related_activities' in param_dict and param_dict['related_activities']:
-            activityQ = activityQ | Q(statementcontextactivity__context_activity__activity_id=param_dict['activity']) \
+            activityQ = activityQ | Q(context_ca_parent__activity_id=param_dict['activity']) \
+                    | Q(context_ca_grouping__activity_id=param_dict['activity']) \
+                    | Q(context_ca_category__activity_id=param_dict['activity']) \
+                    | Q(context_ca_other__activity_id=param_dict['activity']) \
                     | Q(object_substatement__object_activity__activity_id=param_dict['activity']) \
-                    | Q(object_substatement__substatementcontextactivity__context_activity__activity_id=param_dict['activity'])
+                    | Q(object_substatement__context_ca_parent__activity_id=param_dict['activity']) \
+                    | Q(object_substatement__context_ca_grouping__activity_id=param_dict['activity']) \
+                    | Q(object_substatement__context_ca_category__activity_id=param_dict['activity']) \
+                    | Q(object_substatement__context_ca_other__activity_id=param_dict['activity'])
 
     registrationQ = Q()
     if 'registration' in param_dict:
@@ -102,26 +108,35 @@ def complex_get(param_dict, limit, language, format, attachments):
     if 'ascending' in param_dict and param_dict['ascending']:
             stored_param = 'stored'
 
-    stmtset = Statement.objects.filter(voidQ & untilQ & sinceQ & authQ & agentQ & verbQ & activityQ & registrationQ).distinct()
-    
+    stmtset = Statement.objects.prefetch_related('object_agent','object_activity','object_substatement','object_statementref','actor','verb','context_team','context_instructor','authority').filter(voidQ & untilQ & sinceQ & authQ & agentQ & verbQ & activityQ & registrationQ).distinct()
+    stmtset = list(stmtset.values_list('statement_id', flat=True))
     # only find references when a filter other than
     # since, until, or limit was used 
     if reffilter:
-        stmtset = findstmtrefs(stmtset, sinceQ, untilQ)
+        stmtset = stmtset + stmtrefsearch(stmtset)
     
     # Calculate limit of stmts to return
     return_limit = set_limit(limit)
 
     # If there are more stmts than the limit, need to break it up and return more id
-    if stmtset.count() > return_limit:
+    if len(stmtset) > return_limit:
         return initial_cache_return(stmtset, stored_param, return_limit, language, format, attachments)
     else:
         return create_stmt_result(stmtset, stored_param, language, format)
 
+def stmtrefsearch(stmt_list):
+    # find statement refs where ref_id = statement_id in stmt_list
+    stmtreflist = list(StatementRef.objects.filter(ref_id__in=stmt_list).values_list('ref_id', flat=True))
+    if not stmtreflist:
+        return stmt_list
+    # get the statements that have a statement ref_id in the stmtreflist, recurse
+    return stmtreflist + list(stmtrefsearch(Statement.objects.filter(object_statementref__ref_id__in=stmtreflist).distinct().values_list('statement_id', flat=True)))
+
 def create_stmt_result(stmt_set, stored, language, format):
     stmt_result = {}
 
-    if stmt_set.count() > 0:
+    if stmt_set:
+        stmt_set = Statement.objects.filter(statement_id__in=stmt_set).distinct()
         if format == 'exact':
             stmt_result = '{"statements": [%s], "more": ""}' % ",".join([json.dumps(stmt.full_statement) for stmt in stmt_set.order_by(stored)])
         else:
@@ -132,23 +147,6 @@ def create_stmt_result(stmt_set, stored, language, format):
         stmt_result['statements'] = []
         stmt_result['more'] = ""
     return stmt_result
-
-def findstmtrefs(stmtset, sinceQ, untilQ):
-    if stmtset.count() == 0:
-        return stmtset
-    q = Q()
-    for s in stmtset:
-        q = q | Q(object_statementref__ref_id=s.statement_id)
-
-    if sinceQ and untilQ:
-        q = q & Q(sinceQ, untilQ)
-    elif sinceQ:
-        q = q & sinceQ
-    elif untilQ:
-        q = q & untilQ
-    # finally weed out voided statements in this lookup
-    q = q & Q(voided=False)
-    return findstmtrefs(Statement.objects.filter(q).distinct(), sinceQ, untilQ) | stmtset
 
 def create_cache_key(stmt_list):
     # Create unique hash data to use for the cache key
@@ -164,10 +162,11 @@ def initial_cache_return(stmt_list, stored, limit, language, format, attachments
     # First time someone queries POST/GET
     result = {}
     cache_list = []
-    
+
+    stmt_list = Statement.objects.filter(statement_id__in=stmt_list).distinct()
     cache_list.append([s for s in stmt_list.order_by(stored).values_list('id', flat=True)])
     stmt_pager = Paginator(cache_list[0], limit)
- 
+
     # Always start on first page
     current_page = 1
     total_pages = stmt_pager.num_pages
@@ -198,7 +197,7 @@ def initial_cache_return(stmt_list, stored, limit, language, format, attachments
         result['statements'] = [stmt.to_dict(language, format) for stmt in \
                         Statement.objects.filter(id__in=stmt_pager.page(1).object_list).order_by(stored)]
         result['more'] = MORE_ENDPOINT + cache_key    
-            
+                    
     return result
 
 def set_limit(req_limit):
